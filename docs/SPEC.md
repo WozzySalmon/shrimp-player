@@ -185,6 +185,7 @@ On launch the app restores this **paused** at the saved position.
   - A ~250 ms cooldown follows each hop.
   - The output is a one-shot `hop` impulse.
 - **Output struct:** `ShrimpDrive { bass, mids, highs: f32 (0..1), hop: bool }`.
+- **Bursty input** (spike finding): samples arrive in bursts of about 33 ms, so most frames get none. Hold or interpolate between bursts, and never read a gap as silence. Ideally, analyse the window that ends at the playback position.
 - **Latency:** the tap sits before the output buffer, so it is roughly 20–50 ms ahead of what you hear. That's acceptable for v1, so there's no compensation.
 - **Tests** run headless on generated signals:
   - a sine at 60 Hz lights up bass only, a sine at 1 kHz lights up mids, and so on;
@@ -267,6 +268,8 @@ The palette lives in one Slint `global Theme` so a light "Sandy Shallows" theme 
 - All long lists use Slint's virtualised `ListView`.
 - **Spike target:** 5,000 rows scroll smoothly on the phone.
 - Animation runs only while the now-playing stage is visible.
+- **Frame timing:** animation is driven once per display frame (`animation-tick()`), never by a fixed timer, and uses real frame-to-frame time. *(Spike finding.)*
+- **Android system bars:** the root layout is padded by `Window.safe-area-insets`, because Android 15+ draws edge to edge. *(Spike finding.)*
 
 ---
 
@@ -370,7 +373,7 @@ The palette lives in one Slint `global Theme` so a light "Sandy Shallows" theme 
 
 | # | Milestone | Done when |
 |---|---|---|
-| 1 | **Slint spike** | Throwaway code; it is **go/no-go for Slint**, with egui/eframe as the fallback. Passes if **all** of these hold: (a) a procedural shrimp `Path` animates smoothly, driven by FFT bands of a generated test tone, on lap-boi **and** the phone; (b) a 5,000-row `ListView` scrolls smoothly on the phone; (c) an APK built on think installs and runs over wireless adb; (d) the Activity type for the Kotlin shim is chosen. |
+| 1 | **Slint spike** ✅ **GO, done 2026-11-06.** Findings are in `spike/slint-shrimp/RESULTS.md`. | Throwaway code; it is **go/no-go for Slint**, with egui/eframe as the fallback. Passes if **all** of these hold: (a) a procedural shrimp `Path` animates smoothly, driven by FFT bands of a generated test tone, on lap-boi **and** the phone; (b) a 5,000-row `ListView` scrolls smoothly on the phone; (c) an APK built on think installs and runs over wireless adb; (d) the Activity type for the Kotlin shim is chosen. |
 | 2 | **Headless core** | Scanner, SQLite index, tags, `RodioPlayer`, `AnalysisTap`, Engine command and event loop, and session state all work and are tested on think. The queue scaffold is handed to Mr.Bigg. |
 | 3 | **Desktop v1** | All §6 screens work, plus folder settings, souvlaki media keys and resume-on-launch. It runs on Windows and Linux. |
 | 4 | **Android v1** | The Kotlin shim, MediaStore scanning, the foreground service and MediaSession, audio focus, and the signed APK in CI. Mr.Bigg uses it daily. |
@@ -383,7 +386,7 @@ The palette lives in one Slint `global Theme` so a light "Sandy Shallows" theme 
 
 | Risk | Mitigation |
 |---|---|
-| Slint plus a custom Kotlin service, and which Activity type to use | The spike settles it (milestone 1d) before any real Android work starts |
+| Slint plus a custom Kotlin service, and which Activity type to use | **Partly retired:** the spike chose NativeActivity, and Slint, rodio and the APK work on the phone. Still open: subclassing NativeActivity from Kotlin in Gradle, which is the first task of milestone 4 |
 | Getting the HWND out of Slint for souvlaki/SMTC on Windows | Use Slint's winit backend and its window-handle access, checked early in milestone 3 |
 | rodio seek accuracy on VBR MP3s | Accept it for v1; the `Player` trait allows a custom engine later |
 | Path-string rebuilds every frame costing too much on the phone | Measured in the spike; fall back to fewer segments or cached shapes |
