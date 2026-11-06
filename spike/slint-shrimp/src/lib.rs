@@ -188,6 +188,9 @@ struct Analyzer {
     level: [f32; 3],
     flux_hist: VecDeque<f32>,
     since_hop: f32,
+    last_target: [f32; 3],
+    /// Frames that arrived with no new audio since the previous frame.
+    starved: u32,
 }
 
 impl Analyzer {
@@ -208,6 +211,8 @@ impl Analyzer {
             level: [0.0; 3],
             flux_hist: VecDeque::with_capacity(64),
             since_hop: 1.0,
+            last_target: [0.0; 3],
+            starved: 0,
         }
     }
 
@@ -223,8 +228,13 @@ impl Analyzer {
         }
         self.since_hop += dt;
 
-        let mut target = [0.0f32; 3];
+        // No new audio this frame (audio arrives in bursts): hold the last
+        // target instead of treating the gap as silence.
+        let mut target = self.last_target;
         let mut hop = false;
+        if fresh == 0 {
+            self.starved += 1;
+        }
         if fresh > 0 && self.hist.len() == FFT_N {
             for (i, (x, w)) in self.hist.iter().zip(&self.window).enumerate() {
                 self.input[i] = x * w;
@@ -252,6 +262,7 @@ impl Analyzer {
                 self.peak[b] = db.max(self.peak[b] - 6.0 * dt);
                 target[b] = ((db - (self.peak[b] - 24.0)) / 24.0).clamp(0.0, 1.0);
             }
+            self.last_target = target;
             let n = self.flux_hist.len().max(1) as f32;
             let mean = self.flux_hist.iter().sum::<f32>() / n;
             let var = self
@@ -539,11 +550,10 @@ pub fn run() {
     let autoscroll = env_f32("SPIKE_AUTOSCROLL");
     let summary = Rc::new(RefCell::new(Vec::<String>::new()));
 
-    let timer = slint::Timer::default();
     {
         let weak = ui.as_weak();
         let summary = summary.clone();
-        timer.start(slint::TimerMode::Repeated, Duration::from_millis(16), move || {
+        ui.on_frame(move || {
             let Some(ui) = weak.upgrade() else { return };
             let now = Instant::now();
             let dt = (now - last.get()).as_secs_f32().min(0.1);
@@ -583,10 +593,11 @@ pub fn run() {
             if span >= 1.0 {
                 let fps = if notifier_ok { format!("{:.0}", frames.get() as f32 / span) } else { "n/a".into() };
                 let line = format!(
-                    "t={:.0}s fps {} | ticks/s {:.0} | analysis+path {:.3} ms/tick | {} | levels {:.2} {:.2} {:.2} | hops {}",
+                    "t={:.0}s fps {} | frames/s {:.0} (no new audio: {}) | analysis+path {:.3} ms/frame | {} | levels {:.2} {:.2} {:.2} | hops {}",
                     t,
                     fps,
                     ticks.get() as f32 / span,
+                    std::mem::take(&mut analyzer.borrow_mut().starved),
                     work_ns.get() as f64 / 1e6 / ticks.get().max(1) as f64,
                     audio_note,
                     lv[0], lv[1], lv[2],

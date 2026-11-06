@@ -57,7 +57,16 @@ export component AppWindow inherits Window {
     in-out property <int> tab;
     in-out property <length> list-y;
     callback toggle-play();
+    // Called once per displayed frame (vsync-aligned), instead of a fixed timer.
+    callback frame();
+    property <duration> tick: animation-tick();
+    changed tick => { root.frame(); }
 
+    VerticalLayout {
+    padding-top: root.safe-area-insets.top;
+    padding-bottom: root.safe-area-insets.bottom;
+    padding-left: root.safe-area-insets.left;
+    padding-right: root.safe-area-insets.right;
     TabWidget {
         current-index <=> root.tab;
         Tab {
@@ -140,5 +149,6 @@ export component AppWindow inherits Window {
                 }
             }
         }
+    }
     }
 }
