@@ -1,0 +1,47 @@
+# THROWAWAY SPIKE (milestone 1, SPEC §10). Not part of the real workspace.
+# Answers: can Slint draw an audio-reactive procedural shape smoothly, scroll
+# 5,000 rows, and run on Android via NativeActivity?
+[package]
+name = "slint-shrimp-spike"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[lib]
+crate-type = ["lib", "cdylib"]
+
+[[bin]]
+name = "slint-shrimp-spike"
+path = "src/main.rs"
+
+[dependencies]
+slint = "1.18"
+rodio = { version = "0.23", default-features = false, features = ["playback", "mp3", "flac", "vorbis", "wav", "mp4"] }
+realfft = "3.5"
+rtrb = "0.4"
+
+[target.'cfg(target_os = "android")'.dependencies]
+slint = { version = "1.18", features = ["backend-android-activity-06"] }
+
+[build-dependencies]
+slint-build = "1.18"
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+
+# cargo-apk packaging for the spike only (the real app uses Gradle, SPEC §8.2).
+[package.metadata.android]
+package = "shrimp.player.spike"
+build_targets = ["aarch64-linux-android"]
+
+[package.metadata.android.sdk]
+min_sdk_version = 33
+target_sdk_version = 36
+
+[package.metadata.android.application]
+label = "Shrimp spike"
