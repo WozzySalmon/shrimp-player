@@ -8,6 +8,8 @@
 //! - `SPIKE_TAB=1`: start on the Library tab.
 //! - `SPIKE_AUTOSCROLL=<px/s>`: scroll the library list continuously.
 //! - `SPIKE_VOLUME=<0..1>`: output volume (analysis taps before volume).
+//! - `SPIKE_FILE=<path>`: play a real audio file instead of the synth.
+//!   On Android, the first audio file in the app's external files dir is used.
 
 use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
@@ -178,6 +180,7 @@ impl<S: Source> Source for Tap<S> {
 // ---------------------------------------------------------------- analyser
 
 struct Analyzer {
+    sr: f32,
     fft: Arc<dyn RealToComplex<f32>>,
     window: Vec<f32>,
     hist: VecDeque<f32>,
@@ -194,13 +197,14 @@ struct Analyzer {
 }
 
 impl Analyzer {
-    fn new() -> Self {
+    fn new(sr: u32) -> Self {
         let fft = RealFftPlanner::<f32>::new().plan_fft_forward(FFT_N);
         let window = (0..FFT_N)
             .map(|i| 0.5 - 0.5 * (2.0 * PI * i as f32 / (FFT_N - 1) as f32).cos())
             .collect();
         let spec = fft.make_output_vec();
         Self {
+            sr: sr as f32,
             input: fft.make_input_vec(),
             prev_mag: vec![0.0; spec.len()],
             spec,
@@ -240,7 +244,7 @@ impl Analyzer {
                 self.input[i] = x * w;
             }
             self.fft.process(&mut self.input, &mut self.spec).ok();
-            let hz_per_bin = SR as f32 / FFT_N as f32;
+            let hz_per_bin = self.sr / FFT_N as f32;
             let bands = [(20.0, 250.0), (250.0, 4000.0), (4000.0, 16000.0)];
             let mut flux = 0.0;
             let mut energy = [0.0f32; 3];
@@ -467,6 +471,71 @@ fn env_f32(name: &str) -> Option<f32> {
     std::env::var(name).ok()?.parse().ok()
 }
 
+fn audio_ext(p: &std::path::Path) -> bool {
+    matches!(
+        p.extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.to_ascii_lowercase())
+            .as_deref(),
+        Some("mp3" | "flac" | "ogg" | "m4a" | "wav")
+    )
+}
+
+fn pick_file() -> Option<std::path::PathBuf> {
+    if let Ok(p) = std::env::var("SPIKE_FILE") {
+        return Some(p.into());
+    }
+    if cfg!(target_os = "android") {
+        let dir =
+            std::path::Path::new("/storage/emulated/0/Android/data/shrimp.player.spike/files");
+        let mut files: Vec<_> = std::fs::read_dir(dir)
+            .ok()?
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| audio_ext(p))
+            .collect();
+        files.sort();
+        return files.into_iter().next();
+    }
+    None
+}
+
+/// Opens the default output and plays `source`. Without a device, pulls the
+/// source on a thread at roughly real-time pace so the analyser still runs.
+fn start_audio<S: Source + Send + 'static>(
+    source: S,
+) -> (
+    String,
+    Option<rodio::MixerDeviceSink>,
+    Option<rodio::Player>,
+) {
+    match rodio::DeviceSinkBuilder::open_default_sink() {
+        Ok(sink) => {
+            let cfg = sink.config();
+            let note = format!("out {} Hz {} ch", cfg.sample_rate(), cfg.channel_count());
+            let p = rodio::Player::connect_new(sink.mixer());
+            if let Some(v) = env_f32("SPIKE_VOLUME") {
+                p.set_volume(v);
+            }
+            p.append(source);
+            (note, Some(sink), Some(p))
+        }
+        Err(e) => {
+            let mut src = source;
+            let per_10ms = (src.sample_rate().get() * src.channels().get() as u32 / 100) as usize;
+            std::thread::spawn(move || {
+                loop {
+                    for _ in 0..per_10ms {
+                        src.next();
+                    }
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+            });
+            (format!("NO AUDIO DEVICE ({e}); silent pacing"), None, None)
+        }
+    }
+}
+
 pub fn run() {
     let ui = AppWindow::new().expect("create window");
     ui.set_tracks(Rc::new(slint::VecModel::from(fake_tracks(5000))).into());
@@ -477,35 +546,32 @@ pub fn run() {
     // Audio: synth -> tap -> rodio. If no device, pace the synth on a thread so
     // the analyser still gets data.
     let (prod, cons) = rtrb::RingBuffer::<f32>::new(SR as usize);
-    let source = Tap::new(Synth::new(), prod);
-    let (audio_note, sink, player) = match rodio::DeviceSinkBuilder::open_default_sink() {
-        Ok(sink) => {
-            let cfg = sink.config();
-            let note = format!(
-                "audio out {} Hz {} ch",
-                cfg.sample_rate(),
-                cfg.channel_count()
-            );
-            let p = rodio::Player::connect_new(sink.mixer());
-            if let Some(v) = env_f32("SPIKE_VOLUME") {
-                p.set_volume(v);
-            }
-            p.append(source);
-            (note, Some(sink), Some(p))
+    let file = pick_file();
+    let decoded = file.as_ref().and_then(|p| {
+        let f = std::fs::File::open(p)
+            .map_err(|e| eprintln!("open {p:?}: {e}"))
+            .ok()?;
+        rodio::Decoder::try_from(f)
+            .map_err(|e| eprintln!("decode {p:?}: {e}"))
+            .ok()
+    });
+    let (label, src_rate, (audio_note, sink, player)) = match decoded {
+        Some(dec) => {
+            let name = file
+                .as_ref()
+                .and_then(|p| p.file_name())
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            let rate = dec.sample_rate().get();
+            (name, rate, start_audio(Tap::new(dec, prod)))
         }
-        Err(e) => {
-            let mut src = source;
-            std::thread::spawn(move || {
-                loop {
-                    for _ in 0..(SR / 100 * 2) {
-                        src.next();
-                    }
-                    std::thread::sleep(Duration::from_millis(10));
-                }
-            });
-            (format!("NO AUDIO DEVICE ({e}); silent pacing"), None, None)
-        }
+        None => (
+            "test synth".to_string(),
+            SR,
+            start_audio(Tap::new(Synth::new(), prod)),
+        ),
     };
+    let audio_note = format!("{label} @ {src_rate} Hz -> {audio_note}");
     let player = Rc::new(player);
 
     {
@@ -537,7 +603,7 @@ pub fn run() {
             .is_ok()
     };
 
-    let analyzer = RefCell::new(Analyzer::new());
+    let analyzer = RefCell::new(Analyzer::new(src_rate));
     let cons = RefCell::new(cons);
     let start = Instant::now();
     let last = Cell::new(Instant::now());
