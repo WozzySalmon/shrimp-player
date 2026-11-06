@@ -1,0 +1,31 @@
+/target
+**/*.rs.bk
+
+# Android
+/android/.gradle
+/android/build
+/android/app/build
+/android/local.properties
+/android/app/src/main/jniLibs
+*.apk
+*.aab
+
+# Signing (never commit)
+*.jks
+*.keystore
+keystore.properties
+
+# Audio (test audio is generated, never committed)
+*.mp3
+*.flac
+*.ogg
+*.opus
+*.m4a
+*.wav
+
+# Editors / OS
+.idea/
+.vscode/
+.zed/
+.DS_Store
+Thumbs.db
