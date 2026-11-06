@@ -1,0 +1,144 @@
+import { TabWidget, ListView, Button } from "std-widgets.slint";
+
+export struct TrackRow {
+    title: string,
+    artist: string,
+    duration: string,
+}
+
+global Theme {
+    out property <color> bg-deep: #0B1D2E;
+    out property <color> bg-mid: #12324A;
+    out property <color> bg-shallow: #1C4E63;
+    out property <color> accent: #FF7F6E;
+    out property <color> accent-soft: #FFB4A2;
+    out property <color> text: #E8F1F5;
+    out property <color> text-dim: #8FB3C4;
+}
+
+component Bar inherits Rectangle {
+    in property <float> level;
+    in property <string> label;
+    width: 36px;
+    VerticalLayout {
+        alignment: end;
+        spacing: 4px;
+        Rectangle {
+            height: 120px;
+            background: Theme.bg-mid;
+            border-radius: 4px;
+            Rectangle {
+                y: parent.height - self.height;
+                height: parent.height * clamp(root.level, 0, 1);
+                background: Theme.accent;
+                border-radius: 4px;
+            }
+        }
+        Text { text: root.label; color: Theme.text-dim; horizontal-alignment: center; font-size: 11px; }
+    }
+}
+
+export component AppWindow inherits Window {
+    title: "Shrimp spike";
+    preferred-width: 900px;
+    preferred-height: 640px;
+    background: Theme.bg-deep;
+
+    in property <string> body-path;
+    in property <string> eye-path;
+    in property <string> line-path;
+    in property <float> bass;
+    in property <float> mids;
+    in property <float> highs;
+    in property <int> hops;
+    in property <string> stats;
+    in property <bool> playing: true;
+    in property <[TrackRow]> tracks;
+    in-out property <int> tab;
+    in-out property <length> list-y;
+    callback toggle-play();
+
+    TabWidget {
+        current-index <=> root.tab;
+        Tab {
+            title: "Shrimp";
+            Rectangle {
+                background: Theme.bg-deep;
+                VerticalLayout {
+                    padding: 16px;
+                    spacing: 12px;
+                    Rectangle {
+                        vertical-stretch: 1;
+                        background: Theme.bg-mid;
+                        border-radius: 16px;
+                        clip: true;
+                        Path {
+                            width: 100%; height: 100%;
+                            viewbox-width: 400; viewbox-height: 300;
+                            commands: root.body-path;
+                            fill: Theme.accent;
+                            stroke: Theme.accent-soft;
+                            stroke-width: 2px;
+                        }
+                        Path {
+                            width: 100%; height: 100%;
+                            viewbox-width: 400; viewbox-height: 300;
+                            commands: root.line-path;
+                            fill: transparent;
+                            stroke: Theme.accent-soft;
+                            stroke-width: 2.5px;
+                        }
+                        Path {
+                            width: 100%; height: 100%;
+                            viewbox-width: 400; viewbox-height: 300;
+                            commands: root.eye-path;
+                            fill: Theme.bg-deep;
+                        }
+                    }
+                    HorizontalLayout {
+                        spacing: 12px;
+                        alignment: center;
+                        Bar { level: root.bass; label: "bass"; }
+                        Bar { level: root.mids; label: "mids"; }
+                        Bar { level: root.highs; label: "highs"; }
+                        VerticalLayout {
+                            alignment: center;
+                            spacing: 8px;
+                            Button {
+                                text: root.playing ? "Pause" : "Play";
+                                clicked => { root.toggle-play(); }
+                            }
+                            Text { text: "hops: " + root.hops; color: Theme.text; }
+                        }
+                    }
+                    Text { text: root.stats; color: Theme.text-dim; font-size: 12px; wrap: word-wrap; }
+                }
+            }
+        }
+        Tab {
+            title: "Library (5,000)";
+            Rectangle {
+                background: Theme.bg-deep;
+                clip: true;
+                ListView {
+                    content-y <=> root.list-y;
+                    for row[i] in root.tracks: Rectangle {
+                        height: 52px;
+                        background: Math.mod(i, 2) == 0 ? Theme.bg-deep : Theme.bg-mid;
+                        HorizontalLayout {
+                            padding-left: 16px; padding-right: 16px;
+                            spacing: 12px;
+                            VerticalLayout {
+                                alignment: center;
+                                horizontal-stretch: 1;
+                                Text { text: row.title; color: Theme.text; overflow: elide; }
+                                Text { text: row.artist; color: Theme.text-dim; font-size: 12px; overflow: elide; }
+                            }
+                            Text { text: row.duration; color: Theme.text-dim; vertical-alignment: center; }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
