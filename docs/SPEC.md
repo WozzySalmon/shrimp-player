@@ -362,7 +362,14 @@ The palette lives in one Slint `global Theme` so a light "Sandy Shallows" theme 
 
 - `shrimp-core` is fully tested headless on think.
 - **Test audio is generated in code** (sines, click trains, noise, silence) and written to temporary WAV files when needed. **No copyrighted audio is ever committed.**
-- UI and platform behaviour are tested by hand: Linux on lap-boi, Windows on big-boi, Android on the S26 Ultra.
+- **Automated audio checks on think:**
+  - PipeWire runs a virtual speaker, the `shrimp_null` null sink, which is the default output and plays at real-time speed.
+  - Tests play through the real stack (rodio → cpal → ALSA → PipeWire), record the sink with `pw-record --target shrimp_null`, and check the result: the frequency (Goertzel/FFT), the timing and position, seek, pause, volume, and that the analysis tap matches what actually played.
+- **Automated UI screenshots on think:**
+  - A headless Weston compositor runs on `WAYLAND_DISPLAY=wayland-shrimp` (the `weston-headless` user service).
+  - `weston-screenshooter` captures the screen to a PNG.
+- **On lap-boi over SSH:** `pw-record` captures the real hardware output path. Route it to a temporary null sink there, so nothing plays out loud.
+- **What still needs human ears and eyes:** subjective sound (crackles under load, Bluetooth), feel, and anything on Windows or Android. That means Linux on lap-boi, Windows on big-boi and Android on the S26 Ultra.
 
 ---
 
@@ -387,7 +394,7 @@ The palette lives in one Slint `global Theme` so a light "Sandy Shallows" theme 
 | Getting the HWND out of Slint for souvlaki/SMTC on Windows | Use Slint's winit backend and its window-handle access, checked early in milestone 3 |
 | rodio seek accuracy on VBR MP3s | Accept it for v1; the `Player` trait allows a custom engine later |
 | Path-string rebuilds every frame costing too much on the phone | Measured in the spike; fall back to fewer segments or cached shapes |
-| No audio or display on think | Claude tests desktop builds on lap-boi over SSH, and the phone over adb |
+| No audio hardware or physical display on think | A virtual null sink and a headless compositor cover automated checks (§9.3). Claude tests the real hardware path on lap-boi over SSH and the phone over adb |
 
 ---
 
