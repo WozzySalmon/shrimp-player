@@ -153,6 +153,12 @@ CREATE TABLE kv (key TEXT PRIMARY KEY, value TEXT NOT NULL);  -- settings + sess
 - **Shuffle** keeps the original order, so turning shuffle off returns to it. The current track stays current when shuffle is toggled.
 - **Repeat:** `Off | All | One`.
 - Next/previous follow standard player rules: "previous" restarts the track if more than 3 s have played.
+- **Details settled with the scaffold** (the tests in `crates/shrimp-core/src/queue/tests.rs` are the full list):
+  - At the end of the queue with repeat off, playback stops and the last track stays current.
+  - Repeat One only changes what happens when a track finishes by itself. The skip buttons act as in Repeat All.
+  - Turning shuffle on puts the current track first and shuffles the rest after it.
+  - With shuffle on, "add next" goes right after the current track in both orders, "add to end" goes last in both, and "move" changes only the shuffled order.
+  - The same track can be in the queue more than once.
 - The queue is pure logic with no I/O, so it is unit-tested exhaustively.
 
 ### 4.5 Session state `[Q8]`
